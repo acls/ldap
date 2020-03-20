@@ -1,6 +1,7 @@
 package ldap
 
 import (
+	"crypto/tls"
 	"log"
 	"net"
 
@@ -161,9 +162,9 @@ func HandleCompareRequest(req *ber.Packet, boundDN string, fns map[string]Compar
 	return resultCode
 }
 
-func HandleExtendedRequest(req *ber.Packet, boundDN string, fns map[string]Extender, conn net.Conn) (resultCode LDAPResultCode) {
+func HandleExtendedRequest(req *ber.Packet, boundDN string, fns map[string]Extender, conn net.Conn) (resultCode LDAPResultCode, conf *tls.Config) {
 	if len(req.Children) != 1 && len(req.Children) != 2 {
-		return LDAPResultProtocolError
+		return LDAPResultProtocolError, nil
 	}
 	name := ber.DecodeString(req.Children[0].Data.Bytes())
 	var val string
@@ -176,12 +177,12 @@ func HandleExtendedRequest(req *ber.Packet, boundDN string, fns map[string]Exten
 		fnNames = append(fnNames, k)
 	}
 	fn := routeFunc(boundDN, fnNames)
-	resultCode, err := fns[fn].Extended(boundDN, extReq, conn)
+	resultCode, conf, err := fns[fn].Extended(boundDN, extReq, conn)
 	if err != nil {
 		log.Printf("ExtendedFn Error %s", err.Error())
-		return LDAPResultOperationsError
+		return LDAPResultOperationsError, nil
 	}
-	return resultCode
+	return resultCode, conf
 }
 
 func HandleAbandonRequest(req *ber.Packet, boundDN string, fns map[string]Abandoner, conn net.Conn) error {

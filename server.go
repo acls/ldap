@@ -36,7 +36,7 @@ type Abandoner interface {
 	Abandon(boundDN string, conn net.Conn) error
 }
 type Extender interface {
-	Extended(boundDN string, req ExtendedRequest, conn net.Conn) (LDAPResultCode, error)
+	Extended(boundDN string, req ExtendedRequest, conn net.Conn) (LDAPResultCode, *tls.Config, error)
 }
 type Unbinder interface {
 	Unbind(boundDN string, conn net.Conn) (LDAPResultCode, error)
@@ -308,11 +308,16 @@ handler:
 			server.Stats.countUnbinds(1)
 			break handler // simply disconnect
 		case ApplicationExtendedRequest:
-			ldapResultCode := HandleExtendedRequest(req, boundDN, server.ExtendedFns, conn)
+			ldapResultCode, conf := HandleExtendedRequest(req, boundDN, server.ExtendedFns, conn)
 			responsePacket := encodeLDAPResponse(messageID, ApplicationExtendedResponse, ldapResultCode, LDAPResultCodeMap[ldapResultCode])
 			if err = sendPacket(conn, responsePacket); err != nil {
 				log.Printf("sendPacket error %s", err.Error())
 				break handler
+			}
+			if conf != nil {
+				conn = tls.Server(conn, conf)
+			} else {
+				panic("not set")
 			}
 		case ApplicationAbandonRequest:
 			HandleAbandonRequest(req, boundDN, server.AbandonFns, conn)
@@ -380,7 +385,7 @@ func routeFunc(dn string, funcNames []string) string {
 	dnMatch := "," + strings.ToLower(dn)
 	var weight int
 	for _, fn := range funcNames {
-		if strings.HasSuffix(dnMatch, "," + fn) {
+		if strings.HasSuffix(dnMatch, ","+fn) {
 			//  empty string as 0, no-comma string 1 , etc
 			if fn == "" {
 				weight = 0
@@ -436,8 +441,8 @@ func (h defaultHandler) Compare(boundDN string, req CompareRequest, conn net.Con
 func (h defaultHandler) Abandon(boundDN string, conn net.Conn) error {
 	return nil
 }
-func (h defaultHandler) Extended(boundDN string, req ExtendedRequest, conn net.Conn) (LDAPResultCode, error) {
-	return LDAPResultProtocolError, nil
+func (h defaultHandler) Extended(boundDN string, req ExtendedRequest, conn net.Conn) (LDAPResultCode, *tls.Config, error) {
+	return LDAPResultProtocolError, nil, nil
 }
 func (h defaultHandler) Unbind(boundDN string, conn net.Conn) (LDAPResultCode, error) {
 	return LDAPResultSuccess, nil
